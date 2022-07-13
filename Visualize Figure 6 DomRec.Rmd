@@ -1,0 +1,918 @@
+---
+title: "Min-Max Fitness Models"
+author: "Brent Allman"
+date: "7/15/2021"
+output: html_document
+---
+
+```{r echo=FALSE}
+suppressWarnings(suppressPackageStartupMessages(require(gridExtra)))
+suppressWarnings(suppressPackageStartupMessages(require(plyr)))
+suppressWarnings(suppressPackageStartupMessages(require(knitr)))
+suppressWarnings(suppressPackageStartupMessages(require(ggplot)))
+suppressWarnings(suppressPackageStartupMessages(require(ggplot2)))
+suppressWarnings(suppressPackageStartupMessages(require(R.matlab)))
+suppressWarnings(suppressPackageStartupMessages(require(reshape2)))
+suppressWarnings(suppressPackageStartupMessages(require(ggthemes)))
+suppressWarnings(suppressPackageStartupMessages(require(cowplot)))
+suppressWarnings(suppressPackageStartupMessages(require(grid)))
+suppressWarnings(suppressPackageStartupMessages(require(gridExtra)))
+suppressWarnings(suppressPackageStartupMessages(require(cowplot)))
+suppressWarnings(suppressPackageStartupMessages(require(readR)))
+suppressWarnings(suppressPackageStartupMessages(require(reshape2)))
+#install.packages("hdf5r")
+require(hdf5r)
+#install.packages("h5")
+#require(h5)
+#install.packages("raveio")
+require(raveio)
+
+#detach("package:R.matlab", unload=TRUE)
+remotes::install_github("HenrikBengtsson/R.matlab@develop")
+
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+```
+
+```{r, echo=FALSE}
+make.data.frame = function(N = 1000, MOI = 10, ngenes = 8, nsegs = 1, pSIP = 0, epsilon = 0, t.end = 20, mean = 1, variance = 1, linear = 0, heterogeneity = 0, reps = 20){
+  
+  if((N/MOI - .5) %% 2 == 0){
+    C = format(round((N/MOI) +.1), scientific=FALSE)
+  }
+  else{
+    C = format(round(N/MOI), scientific=FALSE)
+  }
+  
+  
+  runs = data.frame(t = 1:t.end, r =as.vector(sapply(1:reps, rep, t.end)), num_mut = rep(NA, t.end*reps), fitness = rep(NA, t.end*reps))
+  
+  for(r in 1:reps){
+    if(epsilon == 0 & linear == 1){
+      fname = paste("lin_", "outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else if(epsilon == 0 & heterogeneity == 0 & linear == 0){
+      fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else{fname = paste("epsilon_", epsilon*100, "_nsegs1_ngenes8_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")}
+    
+    #print(r) #for determining which file cannot be loaded
+    mydata = readMat(fname)
+    
+    for(t in 1:t.end){
+      mutations = mydata$num.mut.mat[,,t]
+      runs$num_mut[runs$t == t & runs$r == r] = mean(rowSums(mutations))
+      runs$fitness[runs$t == t & runs$r == r] = mean(mydata$virion.fitness.mat[,t])
+    }
+  }
+  runs$MOI = MOI
+  runs$heterogeneity = heterogeneity
+  runs$linear = linear
+  runs$N = N
+  runs$C = N/MOI
+  return(runs)
+}
+
+raw.data.frame = function(N = 1000, MOI = 10, ngenes = 8, nsegs = 1, pSIP = 0, epsilon = 0, t.end = 20, mean = 1, variance = 1, linear = 0, heterogeneity = 0, reps = 20){
+  
+  if((N/MOI - .5) %% 2 == 0){
+    C = format(round((N/MOI) +.1), scientific=FALSE)
+  }
+  else{
+    C = format(round(N/MOI), scientific=FALSE)
+  }
+  
+  
+  runs = data.frame(t = 1:t.end, r =as.vector(sapply(1:reps, rep, t.end)), num_mut = rep(NA, t.end*reps), fitness = rep(NA, t.end*reps))
+  
+  for(r in 1:reps){
+    if(epsilon == 0 & linear == 1){
+      fname = paste("lin_", "outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else if(epsilon == 0 & heterogeneity == 0 & linear == 0){
+      fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else{fname = paste("epsilon_", epsilon*100, "_nsegs1_ngenes8_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")}
+    
+    #print(r) #for determining which file cannot be loaded
+    mydata = readMat(fname)
+    
+    for(t in 1:t.end){
+      mutations = mydata$num.mut.mat[,,t]
+      runs$num_mut[runs$t == t & runs$r == r] = (rowSums(mutations))
+      runs$fitness[runs$t == t & runs$r == r] = (mydata$virion.fitness.mat[,t])
+    }
+  }
+  runs$MOI = MOI
+  runs$heterogeneity = heterogeneity
+  runs$linear = linear
+  runs$N = N
+  runs$C = N/MOI
+  return(runs)
+}
+
+summarized.data.frame = function(N = 1000, C = NA, MOI = 10, ngenes = 8, nsegs = 1, pSIP = 0, epsilon = 0, t.end = 20, k = NA, linear = 0, heterogeneity = 0, reps = 20){
+  if(is.na(C)){
+    if((N / MOI - .5) %% 2 == 0) {
+      C = format(round((N / MOI) + .1), scientific = FALSE)
+    }
+    else{
+      C = format(round(N / MOI), scientific = FALSE)
+    }
+  }
+  
+  
+  runs = data.frame(t = 1:t.end, r =as.vector(sapply(1:reps, rep, t.end)), num_mut = rep(NA, t.end*reps), fitness = rep(NA, t.end*reps))
+  #for(r in 1:reps){
+  if(epsilon == 0 & linear == 1){
+    fname = paste("summary_lin_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else if(epsilon == 0 & heterogeneity == 0 & linear == 0){
+    fname = paste("summary_log_NaN_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else if(epsilon == 0 & heterogeneity == 1 & linear == 0){
+    fname = paste("summary_gamma_",k, "_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else{fname = paste("epsilon_", epsilon*100, "_nsegs1_ngenes8_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")}
+  #}
+  mydata = readMat(fname)
+  params = mydata$params[,,1]
+  
+  runs = data.frame(t = 1:params$tstep[,], 
+                    mean_mut = rep(NA, params$tstep[,]), 
+                    std_error = rep(NA, params$tstep[,]))
+  runs$mean_mut = mydata$mean.per.t
+  runs$std_error = mydata$std.error
+  
+  runs$MOI = params$MOI[,]
+  runs$heterogeneity = heterogeneity
+  runs$linear = linear
+  runs$V = params$N[,]
+  runs$C = params$C[,]
+  runs$k = params$k[,]
+  return(runs)
+}
+
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column    
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+```
+
+```{r, echo=FALSE}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min")
+N = 1668; ngenes = 8; nsegs = 1; pSIP = 0; epsilon = 0; t.end = 150; linear = 0; heterogeneity = 0; reps = 1; C = 1000
+fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", reps, ".mat", sep="")
+#fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", reps, ".csv", sep="")
+mydata = readMat(fname)
+#mydata = read_mat(fname)
+#mydata=read.csv(fname)
+
+Fig1.A.data = data.frame()
+curr = data.frame("mutations" = 1:length(rowSums(mydata$num.mut.mat[,,t.end])))
+
+for(gen in c(150)){
+  curr$mutations = rowSums(mydata$num.mut.mat[,,gen])
+  curr$t = as.factor(gen)
+  Fig1.A.data = rbind(Fig1.A.data, curr)
+}
+
+mycols = c("#edf8b1", "#a8ddb5", "#43a2ca") #found these using scale_color_brewer
+
+#"dark green","grey", "hot pink"
+
+Fig1.A.plotmin = ggplot(Fig1.A.data, aes(x=mutations, fill = t,  color = t)) +
+  geom_histogram(aes(y=..count../sum(..count..)),alpha=0.7, binwidth = 2, position="identity")+
+  scale_color_manual(values = "hot pink")+
+  scale_fill_manual(values = "hot pink")+
+  xlab("") + ylab("") + ggtitle("dominant") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"), 
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        plot.title = element_text(colour="black", size=14, face="bold", hjust = 0.5, margin = margin(0,0,-20,0)))+
+  xlim(c(0,135))+ylim(c(0,0.4))
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+N = 1668; ngenes = 8; nsegs = 1; pSIP = 0; epsilon = 0; t.end = 300; linear = 0; heterogeneity = 0; reps = 1; C = 1000
+fname = "max_data1.mat"
+#fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", reps, ".csv", sep="")
+mydata = readMat(fname)
+#mydata=read.csv(fname)
+
+Fig1.A.data = data.frame()
+curr = data.frame("mutations" = 1:length(rowSums(mydata$num.mut.mat[,,t.end])))
+
+for(gen in c(150)){
+  curr$mutations = rowSums(mydata$num.mut.mat[,,gen])
+  curr$t = as.factor(gen)
+  Fig1.A.data = rbind(Fig1.A.data, curr)
+}
+
+mycols = c("#edf8b1", "#a8ddb5", "#43a2ca") #found these using scale_color_brewer
+
+Fig1.A.plotmax = ggplot(Fig1.A.data, aes(x=mutations, fill = t,  color = t)) +
+  geom_histogram(aes(y=..count../sum(..count..)),alpha=0.7, binwidth = 2, position="identity")+
+  scale_color_manual(values = "dark green")+
+  scale_fill_manual(values = "dark green")+
+  xlab("") + ylab("frequency") + ggtitle("recessive") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"), 
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        plot.title = element_text(colour="black", size=14, face="bold", hjust = 0.5, margin = margin(0,0,-20,0)))+
+  xlim(c(0,135))+ylim(c(0,0.4))
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+N = 1668; ngenes = 8; nsegs = 1; pSIP = 0; epsilon = 0; t.end = 150; linear = 0; heterogeneity = 0; reps = 1; C = 1000
+fname = "base_data1.mat"
+#fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", reps, ".csv", sep="")
+mydata = readMat(fname)
+#mydata=read.csv(fname)
+
+Fig1.A.data = data.frame()
+curr = data.frame("mutations" = 1:length(rowSums(mydata$num.mut.mat[,,t.end])))
+
+for(gen in c(150)){
+  curr$mutations = rowSums(mydata$num.mut.mat[,,gen])
+  curr$t = as.factor(gen)
+  Fig1.A.data = rbind(Fig1.A.data, curr)
+}
+
+mycols = c("#edf8b1", "#a8ddb5", "#43a2ca") #found these using scale_color_brewer
+
+Fig1.A.plotbase = ggplot(Fig1.A.data, aes(x=mutations, fill = t,  color = t)) +
+  geom_histogram(aes(y=..count../sum(..count..)),alpha=0.7, binwidth = 2, position="identity")+
+  scale_color_manual(values = "grey")+
+  scale_fill_manual(values = "grey")+
+  xlab("mutations per virion") + ylab("") + ggtitle("base") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"), 
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        plot.title = element_text(colour="black", size=14, face="bold", hjust = 0.5, margin = margin(0,0,-20,0)))+
+  xlim(c(0,135))+ylim(c(0,0.4))
+
+
+Fig1.A.plotmax
+Fig1.A.plotmin
+Fig1.A.plotbase
+
+
+
+```
+
+```{r, echo=FALSE}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min")
+N.1.B= c(1, 10, 100, 167, 278, 464, 774, 1292, 2154, 3594, 5995, 10000)
+Fig1.B.data = data.frame()
+Fig1.B.data.max = data.frame()
+
+for (v in N.1.B) {
+  v
+  # read in the mean data for each time point and for each replicate
+  data.curr.V = summarized.data.frame(N = v, MOI = 0.1, heterogeneity = 0, reps = 1)
+  Fig1.B.data = rbind.data.frame(Fig1.B.data, data.curr.V)
+  
+}
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+for (v in N.1.B) {
+  v
+  # read in the mean data for each time point and for each replicate
+  data.curr.V = summarized.data.frame(N = v, MOI = 0.1, heterogeneity = 0, reps = 1)
+  Fig1.B.data.max = rbind.data.frame(Fig1.B.data.max, data.curr.V)
+  
+}
+
+# extract only the final time points from the data
+Fig1.B.data.ends = subset(Fig1.B.data, t == 20)
+Fig1.B.data.ends$MOI = Fig1.B.data.ends$V / Fig1.B.data.ends$C
+Fig1.B.data.ends$min = TRUE
+Fig1.B.data.ends.max = subset(Fig1.B.data.max, t == 21)
+Fig1.B.data.ends.max$MOI = Fig1.B.data.ends.max$V / Fig1.B.data.ends.max$C
+Fig1.B.data.ends.max$min = FALSE
+
+Fig1.B.data.ends = rbind.data.frame(Fig1.B.data.ends, Fig1.B.data.ends.max)
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+base.model= data.frame()
+for (v in N.1.B) {
+  v
+  # read in the mean data for each time point and for each replicate
+  data.curr.V = summarized.data.frame(N = v, MOI = 0.1, heterogeneity = 0, reps = 1)
+  base.model = rbind.data.frame(base.model, data.curr.V)
+  
+}
+base.model = subset(base.model, t == 21)
+base.model$MOI = base.model$V / base.model$C
+base.model$min = "NA"
+
+Fig1.B.data.ends = rbind.data.frame(Fig1.B.data.ends, base.model)
+
+
+pd <- position_dodge(0)
+alph = 0.5
+
+Fig1.B.plot = ggplot(Fig1.B.data.ends, aes(x=log10(V), y=mean_mut)) + 
+   geom_line(aes(x=log10(V), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=log10(V), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=log10(V), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  scale_x_continuous(name="V", limits = c(-.25, 4.25), breaks=c(0, 1, 2, 3, 4), labels = c(1, 10, 100, 1000, 10000)) + 
+  #scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(4.9, 6.5), breaks = c(5, 5.5, 6.0)) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(3,21.5), breaks = c(5, 10, 15, 20)) +
+  scale_color_manual(name = "",values = c("dark green","grey", "hot pink"),
+                     labels = c("recessive", "base", "dominant"),
+                     breaks = c(FALSE,"NA", TRUE))+
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "left",
+        legend.title = element_text(colour="black", size=14, face="bold"), 
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=10.8))
+
+
+# Fig1.B.plot.presentation = ggplot(Fig1.B.data.ends.SE, aes(x=log10(V), y=num_mut, colour="black")) + 
+#     geom_errorbar( aes(ymin=num_mut-ci, ymax=num_mut+ci), colour="black", width=.1) +
+#     geom_line(color = "black") +
+#     geom_point(color = "black", size=3) +
+#   xlab("Log V") + ylab("mean mutations per virion") + 
+#   theme_bw() +
+#   guides(colour = guide_legend(override.aes = list(size=4,linetype=1))) +# makes the lines in the legend fatter
+#   theme(legend.position = "none",
+#         axis.text=element_text(size=14),
+#         axis.title=element_text(size=16,face="bold"))
+
+Fig1.B.plot
+
+```
+```{r, echo=FALSE}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min211007")
+
+MOI.1.C = c(0.0100, 0.0359, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+n = 1000
+C = c('100000', '27826', '7743', '2154', '599', '167', '46', '13', '4', '1')
+
+t_final = 150
+
+s = 0.2
+U = 1
+generations = 150
+
+
+MOI_int = seq(.01, 10, 0.1)
+#s_eff = s * dpois(x = 1, lambda = MOI.1.C)
+#s_eff = s * ppois(1, lambda = MOI.1.C)
+#s_eff = s * (MOI.1.C) / (exp(MOI.1.C) - 1)
+s_eff = s * exp(-MOI.1.C) * MOI.1.C / (1 - exp(-MOI.1.C)) # s * P(singly infected | cell is infected) by Baye's Thm
+s_eff = s * exp(-MOI_int) * MOI_int / (1 - exp(-MOI_int)) 
+s_eff
+
+#Jain eqn 34
+n_0 = n * exp(-U/s_eff)
+c = exp(-U) * s_eff * (1-s_eff) #the deviation in the fitness from the least loaded class to the next loaded class. eqn 22. Or say c = 0.6
+beta= n_0 * c * s_eff
+beta
+if(beta < 1){
+  Tbar = n_0 * (2 - log(beta))
+} else{
+  Tbar = sqrt(pi) * n_0 * (beta^(-3/2)) * exp(beta)
+}
+Tbar #average time between ratchet clicks
+click_per_gen = 1 / Tbar
+expectation = click_per_gen * generations
+expectation
+
+n_0 = c(1, 10, 100, 1000, 10000) * exp(-U/s)
+c = .6#exp(-U) * s * (1-s) #the deviation in the fitness from the least loaded class to the next loaded class. eqn 22. Or say c = 0.6
+beta= n_0 * c * s
+beta
+for (b in beta) {
+  if(b < 1){
+  Tbar = n_0 * (2 - log(b))
+} else{
+  Tbar = sqrt(pi) * n_0 * (b^(-3/2)) * exp(b)
+}
+}
+
+Tbar #average time between ratchet clicks
+click_per_gen = 1 / Tbar
+expectation = click_per_gen * generations
+expectation
+
+#Neher 2012 - IMPLEMENTED WRONG HERE
+lambda = U / s
+ord_mag = 10^(floor(log10(lambda^2)))
+yux = (0.5 * lambda) + ord_mag#sqrt(n * s * exp(lambda) * sigmasq)
+alphaL = 0.8 #this is an approximation. Need S* for exact
+Tclick = 2/5 * yux * exp(n * s * alphaL * exp(-lambda)) / (alphaL * s * sqrt(n) * exp(-lambda)) #eqn 33
+Tclick
+click_per_gen = 1 / Tclick
+expectation = click_per_gen * generations
+expectation
+
+
+#s_eff = s * ppois(1, lambda = MOI.1.C) / (1-dpois(1, lambda = MOI.1.C))
+
+#Rouzine 2003 Mathematical Supplement
+f_acc = (U/s)*(1-exp(-s*t_final))
+f_acc = (U/s_eff)*(1-exp(-s_eff*t_final))
+f_acc
+
+n_0 = n * exp(-U/s_eff)
+n_0
+
+#eqn 37 from Rouzine
+alpha = 1
+c = 1
+(log(t_final) / (n *alpha * c * s_eff)) ^ (1/(alpha -1))
+
+(U/s) * (1-dpois(x = 1, lambda = MOI.1.C))
+U/s_eff
+
+h = 0.5
+theta = s_eff*(h^2) / (2*U*(1-(2*h)))
+L = U * (1-theta+((theta*(2+theta))^0.5))
+L
+
+Fig1.C.data = data.frame()
+Fig1.C.data.max = data.frame()
+
+for (cell in C) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = n, C = cell, heterogeneity = 0, t.end=t_final)
+  Fig1.C.data = rbind.data.frame(Fig1.C.data, data.curr.MOI)
+}
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max211007")
+for (cell in C) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = n, C = cell, heterogeneity = 0, t.end=t_final)
+  Fig1.C.data.max = rbind.data.frame(Fig1.C.data.max, data.curr.MOI)
+}
+
+# extract only the final time points from the data
+Fig1.C.data.ends = subset(Fig1.C.data, t == t_final)
+Fig1.C.data.ends$MOI = Fig1.C.data.ends$V / Fig1.C.data.ends$C
+Fig1.C.data.ends$min = TRUE
+Fig1.C.data.ends.max = subset(Fig1.C.data.max, t == t_final)
+Fig1.C.data.ends.max$MOI = Fig1.C.data.ends.max$V / Fig1.C.data.ends.max$C
+Fig1.C.data.ends.max$min = FALSE
+
+Fig1.C.data.ends = rbind.data.frame(Fig1.C.data.ends, Fig1.C.data.ends.max)
+
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig1.C.data.ends.SE = summarySE(Fig1.C.data.ends, measurevar="num_mut", groupvars=c("MOI"))
+
+#setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/base211007")
+
+base.model= data.frame()
+for (cell in C) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = n, C = cell, heterogeneity = 0, t.end=t_final)
+  base.model = rbind.data.frame(base.model, data.curr.MOI)
+}
+base.model150 = base.model
+base.model = subset(base.model, t == t_final)
+base.model$MOI = base.model$V / base.model$C
+base.model$min = "NA"
+Fig1.C.data.ends = rbind.data.frame(Fig1.C.data.ends, base.model)
+
+
+exp_labs = c(expression(~10^-2), expression(~10^-1), expression(~10^0), expression(~10^1), expression(~10^2), expression(~10^3))
+std_labs = c("0.01", "0.1", "1", "10","100", "1000")
+pd <- position_dodge(0)
+cols = c("TRUE" = "black", "FALSE" = "green")
+alph = 0.5
+if(t_final > 25){
+Fig1.C.plot = ggplot(Fig1.C.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  # scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                    labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (V = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 150", limits = c(3,155), breaks = seq(0, 150, 50)) +
+   scale_color_manual(name = "",values = c("dark green","grey", "hot pink"),
+                     labels = c("max", "base", "min"),
+                     breaks = c(FALSE,"NA", TRUE))+
+  geom_hline(aes(yintercept = 150), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+} else{
+  Fig1.C.plot = ggplot(Fig1.C.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  # scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                    labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (V = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(3,21.5), breaks = c(5, 10, 15, 20)) +
+   scale_color_manual(name = "",values = c("dark green","grey", "hot pink"),
+                     labels = c("max", "base", "min"),
+                     breaks = c(FALSE,"NA", TRUE))+
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+}
+Fig1.C.plot
+
+# test = data.frame(MOI_int, expectation)
+# #names(test) = c("MOI", "mean_mut") 
+# ggplot(test,aes(x=(MOI_int), y = expectation)) + geom_line() +
+#   scale_x_log10(name = "MOI (V = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) + 
+#   scale_y_continuous(limits = c(0, 1000))
+
+```
+
+```{r, echo=FALSE}
+MOI.1.D= c(0.0100, 0.0359, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+n = c(10, 36, 129, 464, 1668, 5995, '21544', '77426', '278256', '1000000')
+Cell = 1000
+t_final = 150
+Fig1.D.data = data.frame()
+Fig1.D.data.max = data.frame()
+alph=0.5
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min211007")
+for (N in n) {
+  
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = N, C=Cell, heterogeneity = 0, t.end=150)
+  Fig1.D.data = rbind.data.frame(Fig1.D.data, data.curr.MOI)
+  
+}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max211007")
+for (N in n) {
+  
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = N, C=Cell, heterogeneity = 0, t.end=150)
+  Fig1.D.data.max = rbind.data.frame(Fig1.D.data.max, data.curr.MOI)
+  
+}
+
+# extract only the final time points from the data
+Fig1.D.data.ends = subset(Fig1.D.data, t == t_final)
+Fig1.D.data.ends$MOI = Fig1.D.data.ends$V / Fig1.D.data.ends$C
+Fig1.D.data.ends$min = TRUE
+Fig1.D.data.ends.max = subset(Fig1.D.data.max, t == t_final)
+Fig1.D.data.ends.max$MOI = Fig1.D.data.ends.max$V / Fig1.D.data.ends.max$C
+Fig1.D.data.ends.max$min = FALSE
+
+Fig1.D.data.ends = rbind.data.frame(Fig1.D.data.ends, Fig1.D.data.ends.max)
+
+#setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/base211007")
+
+base.model= data.frame()
+for (N in n) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = N, C = Cell, heterogeneity = 0, t.end=150)
+  base.model = rbind.data.frame(base.model, data.curr.MOI)
+}
+base.model = subset(base.model, t == t_final)
+base.model$MOI = base.model$V / base.model$C
+base.model$min = "NA"
+Fig1.D.data.ends = rbind.data.frame(Fig1.D.data.ends, base.model)
+
+gordo.model = data.frame(t = rep(150,10),
+                         mean_mut = c(340.8129,112.6535,37.2146,11.5291,2.7057,0.1766,0.0000,0.0000,0.0000,0),
+                         std_error = rep(NA, 10),
+                         heterogeneity = rep(0,10),
+                         linear = rep(0,10),
+                         V = n,
+                         C=rep(1000,10),
+                         k=rep(0,10),
+                         MOI= base.model$MOI,
+                         min= rep('Gordo',10))
+#Fig1.D.data.ends = rbind.data.frame(Fig1.D.data.ends, gordo.model)
+
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig1.D.data.ends.SE = summarySE(Fig1.D.data.ends, measurevar="num_mut", groupvars=c("MOI"))
+
+#pd <- position_dodge(1)
+cols = c("TRUE" = "black", "FALSE" = "green")
+if(t_final > 25){
+Fig1.D.plot = ggplot(Fig1.D.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  #scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                   labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (C = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  scale_y_continuous(name = "", limits = c(0,155), breaks = seq(0, 150, 50)) +
+  #scale_y_continuous(name = "mean mutations per\n virion at t=150", limits = c(0,155), breaks = seq(0, 150, 50)) +
+  geom_hline(aes(yintercept = 150), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  scale_color_manual(name = "",values = c("dark green","grey", "hot pink", "orange"),
+                     labels = c("max", "base", "min", "Gordo"),
+                     breaks = c(FALSE,"NA", TRUE, "Gordo"))+
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+} else{
+
+Fig1.D.plot = ggplot(Fig1.D.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  #scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                   labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (C = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  scale_y_continuous(name = "", limits = c(0,21.5), breaks = c(5, 10, 15, 20)) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  scale_color_manual(name = "",values = c("dark green","grey", "hot pink"),
+                     labels = c("max", "base", "min"),
+                     breaks = c(FALSE,"NA", TRUE))+
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+}
+
+Fig1.D.plot
+
+```
+
+
+```{r, echo=FALSE}
+# Putting them all together!
+
+# lay <- rbind(c(1, 1, 1),
+#              c(2, 3, 4))
+# Figure1 = grid.arrange(Fig1.A.plot, Fig1.B.plot, Fig1.C.plot, Fig1.D.plot, layout_matrix = lay)
+
+bottom_row.paper = plot_grid(Fig1.C.plot, Fig1.D.plot, nrow = 1, labels = c('B', 'C'), 
+                             label_size = 14, rel_widths = c(1,1), label_x = c(0, 0), label_y= c(1.05, 1.05))
+top_row.paper =  plot_grid(Fig1.A.plotmax, Fig1.A.plotbase, Fig1.A.plotmin, ncol = 3, 
+                           labels = c('A'), label_size = 16, align = "hv", scale = 0.95)
+
+Figure1.paper = plot_grid(top_row.paper, bottom_row.paper, nrow = 2, label_size = 16)
+Figure1.paper
+
+#setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode")
+ggsave(plot = Figure1.paper, file = paste0("Figure_6_DomRec_", Sys.Date(), ".jpg"), height = 4.4, width = 6, units = "in")
+ggsave(plot = Figure1.paper, file = paste0("Figure_6_DomRec_", Sys.Date(), ".pdf"), height = 4.4, width = 6, units = "in")
+```
+
+```{r, echo=FALSE}
+MOI.1.D= c(0.0100, 0.0359, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+n = c(10, 36, 129, 464, 1668, 5995, '21544', '77426', '278256', '1000000')
+Cell = 1000
+t_final = 150
+Fig1.D.data.ends = data.frame()
+alph=0.5
+
+#setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/base211007")
+
+base.model= data.frame()
+for (N in n) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = N, C = Cell, heterogeneity = 0, t.end=150)
+  base.model = rbind.data.frame(base.model, data.curr.MOI)
+}
+base.model = subset(base.model, t == t_final)
+base.model$MOI = base.model$V / base.model$C
+base.model$min = "NA"
+Fig1.D.data.ends = rbind.data.frame(Fig1.D.data.ends, base.model)
+
+gordo.model = data.frame(t = rep(150,10),
+                         mean_mut = c(340.8129,112.6535,37.2146,11.5291,2.7057,0.1766,0.0000,0.0000,0.0000,0),
+                         std_error = rep(NA, 10),
+                         heterogeneity = rep(0,10),
+                         linear = rep(0,10),
+                         V = n,
+                         C=rep(1000,10),
+                         k=rep(0,10),
+                         MOI= base.model$MOI,
+                         min= rep('Gordo',10))
+Fig1.D.data.ends = rbind.data.frame(Fig1.D.data.ends, gordo.model)
+
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig1.D.data.ends.SE = summarySE(Fig1.D.data.ends, measurevar="num_mut", groupvars=c("MOI"))
+
+#pd <- position_dodge(1)
+cols = c("TRUE" = "black", "FALSE" = "green")
+if(t_final > 25){
+Fig1.D.plot = ggplot(Fig1.D.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  #scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                   labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (C = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  #scale_y_continuous(name = "", limits = c(0,155), breaks = seq(0, 150, 50)) +
+  scale_y_continuous(name = "mean mutations per\n virion at t=150", limits = c(0,155), breaks = seq(0, 150, 50)) +
+  geom_hline(aes(yintercept = 150), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  scale_color_manual(name = "",values = c("black","orange"),
+                     labels = c("base", "Gordo"),
+                     breaks = c("NA","Gordo"))+
+  theme_bw() +
+  theme(legend.position = "left",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+} else{
+Fig1.D.plot = ggplot(Fig1.D.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  #scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                   labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (C = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  scale_y_continuous(name = "", limits = c(0,21.5), breaks = c(5, 10, 15, 20)) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  scale_color_manual(name = "",values = c("dark green","black", "hot pink"),
+                     labels = c("max", "base", "min"),
+                     breaks = c(FALSE,"NA", TRUE))+
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+}
+
+Fig1.D.plot = plot_grid(Fig1.D.plot, nrow = 1,labels = c('A'), label_size = 16)
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+ggsave(plot = Fig1.D.plot, file = paste0("Figure_Gordo_BaseModel_", Sys.Date(), ".jpg"), height = 4.4, width = 6, units = "in")
+ggsave(plot = Fig1.D.plot, file = paste0("Figure_Gordo_BaseModel_", Sys.Date(), ".pdf"), height = 4.4, width = 6, units = "in")
+
+Fig1.D.plot
+
+```
+
+
+```{r, echo=FALSE}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min")
+
+MOI.1.C = c(0.0100, 0.0359, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+n = 1000
+C = c('100000', '27826', '7743', '2154', '599', '167', '46', '13', '4', '1')
+
+
+
+Fig1.C.data = data.frame()
+Fig1.C.data.max = data.frame()
+
+for (cell in C) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = n, C = cell, heterogeneity = 0, t.end=150)
+  Fig1.C.data = rbind.data.frame(Fig1.C.data, data.curr.MOI)
+}
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+for (cell in C) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = n, C = cell, heterogeneity = 0, t.end=150)
+  Fig1.C.data.max = rbind.data.frame(Fig1.C.data.max, data.curr.MOI)
+}
+
+# extract only the final time points from the data
+Fig1.C.data.ends = subset(Fig1.C.data, t == 150)
+Fig1.C.data.ends$MOI = Fig1.C.data.ends$V / Fig1.C.data.ends$C
+Fig1.C.data.ends$min = TRUE
+Fig1.C.data.ends.max = subset(Fig1.C.data.max, t == 150)
+Fig1.C.data.ends.max$MOI = Fig1.C.data.ends.max$V / Fig1.C.data.ends.max$C
+Fig1.C.data.ends.max$min = FALSE
+
+Fig1.C.data.ends = rbind.data.frame(Fig1.C.data.ends, Fig1.C.data.ends.max)
+
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig1.C.data.ends.SE = summarySE(Fig1.C.data.ends, measurevar="num_mut", groupvars=c("MOI"))
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+base.model= data.frame()
+for (cell in C) {
+  # read in the mean data for each time point and for each replicate
+  data.curr.MOI = summarized.data.frame(N = n, C = cell, heterogeneity = 0, t.end=150)
+  base.model = rbind.data.frame(base.model, data.curr.MOI)
+}
+base.model150 = base.model
+base.model = subset(base.model, t == 150)
+base.model$MOI = base.model$V / base.model$C
+base.model$min = "NA"
+Fig1.C.data.ends = rbind.data.frame(Fig1.C.data.ends, base.model)
+
+
+exp_labs = c(expression(~10^-2), expression(~10^-1), expression(~10^0), expression(~10^1), expression(~10^2), expression(~10^3))
+std_labs = c("0.01", "0.1", "1", "10","100", "1000")
+pd <- position_dodge(0)
+cols = c("TRUE" = "black", "FALSE" = "green")
+Fig1.C.plot = ggplot(Fig1.C.data.ends, aes(x=(MOI), y=mean_mut, colour="black")) + 
+    geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((min)),
+                                         group = as.factor((min))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((min)),
+                                          group = as.factor((min))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((min)),
+                                             group = as.factor(min)), width=0.5, position = pd, alpha = alph)+
+  # scale_color_manual(values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+  #                    labels = c(0.01, 0.36, 10, 316, 10000))+
+  scale_x_log10(name = "MOI (V = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = std_labs) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(3,150), breaks = seq(0, 150, 50)) +
+   scale_color_manual(name = "",values = c("dark green","grey", "hot pink"),
+                     labels = c("max", "base", "min"),
+                     breaks = c(FALSE,"NA", TRUE))+
+  geom_hline(aes(yintercept = 150), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+Fig1.C.plot
+```
+
+
+

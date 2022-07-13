@@ -4,7 +4,7 @@ function void = run_N_script(params)
 % evolve through each time step
 
 gene_mut = zeros(params.N, params.n_genes); % each GENE is initialized with zero mutations
-offsp_vec = zeros(params.N,1);
+offsp_vec = zeros(params.N);
 
 % N x n_genes x t matrices the store our variables of interest at every time step
 num_mut_mat = NaN*zeros(params.N, params.n_genes, params.tstep); % the num of mutations at each time step GENE
@@ -15,7 +15,7 @@ cell_fits_mat = NaN*zeros(params.C, params.tstep); %the fitness of the cells
 offspring_variance = NaN*zeros(1, params.tstep);
 
 for t = 1:params.tstep
-    t
+    %t
     %log the mutation data from the previous (or initial) generation
     num_mut_mat(:,:,t) = gene_mut; % the mutations on each gene of free virus
     gene_fit = (1-params.sd).^(gene_mut.^(1-params.epistasis));

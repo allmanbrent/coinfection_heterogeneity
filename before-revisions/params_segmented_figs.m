@@ -57,9 +57,6 @@ function void = params_segmented_figs()
             params = F4params;
             params.N = n;
             params.n_segments = ns;
-            if n > 77426
-                params.ran = 1;
-            end
             main_coinfection_script(params);
             summarize_data_NeV(params);
         end

@@ -37,8 +37,7 @@ for mu = input_params.U
 for K = input_params.k
     params.k = K;
 
-    %mean_per_t_per_rep = zeros(20, max(input_params.ran));%
-    mean_per_t_per_rep =zeros(input_params.tstep, max(input_params.ran));
+    mean_per_t_per_rep = zeros(20, max(input_params.ran));%zeros(input_params.tstep, max(input_params.ran));
     offspring_var_means = NaN(1, max(input_params.ran));
     mean_per_t = zeros(150);%zeros(params.tstep);
     for RAN = input_params.ran
@@ -49,8 +48,7 @@ for K = input_params.k
             if params.N == 1
                 mean_per_t_per_rep(:,RAN) = reshape((sum(num_mut_mat, 2)), params.tstep,1);
             else
-                %mean_per_t_per_rep(:,RAN) = reshape(mean(sum(num_mut_mat(:,:,1:20), 2)), 20,1);
-                mean_per_t_per_rep(:,RAN) = reshape(mean(sum(num_mut_mat(:,:,1:params.tstep), 2)), params.tstep,1);
+                mean_per_t_per_rep(:,RAN) = reshape(mean(sum(num_mut_mat(:,:,1:20), 2)), 20,1);
                 if exist('offspring_variance') == 1
                     offspring_var_means(RAN) = mean(offspring_variance);
                 end
@@ -62,11 +60,7 @@ for K = input_params.k
             if params.n_segments > 1
                 mean_per_t_per_rep(:,RAN) = reshape(mean(sum(num_mut_mat, 2)), params.tstep,1);
             else
-                if params.N == 1
-                mean_per_t_per_rep(:,RAN) = reshape((sum(num_mut_mat, 2)), params.tstep,1);
-                else
                 mean_per_t_per_rep(:,RAN) = reshape(mean(sum(num_mut_mat, 2)), params.tstep,1);
-                end
             end
             outfile_name = strcat('summary_log_NaN_nsegs', int2str(params.n_segments), '_ngenes', int2str(params.n_genes), '_N', int2str(params.N), '_C', int2str(params.C),'_pSIP', (num2str(params.pSIP*100)));
         elseif params.scale_out_lin == true
@@ -87,9 +81,9 @@ std_error = std(mean_per_t_per_rep,0,2) / sqrt(max(input_params.ran));
 if isnan(offspring_var_means(1)) == 0
     V_eff_mean = mean(params.N ./ offspring_var_means);
     V_eff_error = std(offspring_var_means) ./ sqrt(max(input_params.ran));
-    save(outfile_name, 'params', 'mean_per_t', 'std_error', 'V_eff_mean', 'V_eff_error', '-v6');
+    save(outfile_name, 'params', 'mean_per_t', 'std_error', 'V_eff_mean', 'V_eff_error');
 else
-    save(outfile_name, 'params', 'mean_per_t', 'std_error', '-v6');
+    save(outfile_name, 'params', 'mean_per_t', 'std_error');
 end
 
 end

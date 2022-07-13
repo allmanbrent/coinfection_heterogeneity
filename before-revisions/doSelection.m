@@ -17,7 +17,7 @@ for i = 1:params.C
     cell_virus(i).segment_ablation = cellular_segment_ablation; % the ablated segments
     cell_virus(i).gene_mut = cellular_gene_mut; % the genes with ablation
     
-    cell_fitness(i,1) = GetCellFitnessBase(params, cell_virus(i));
+    cell_fitness(i,1) = GetCellFitness(params, cell_virus(i));
 end
 
 if max(cell_fitness) == 0
