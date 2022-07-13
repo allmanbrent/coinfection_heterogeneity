@@ -1,0 +1,678 @@
+---
+title: "MinMaxHeterogeneity"
+author: "Brent Allman"
+date: "9/22/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r echo=FALSE}
+suppressWarnings(suppressPackageStartupMessages(require(gridExtra)))
+suppressWarnings(suppressPackageStartupMessages(require(plyr)))
+suppressWarnings(suppressPackageStartupMessages(require(knitr)))
+suppressWarnings(suppressPackageStartupMessages(require(ggplot)))
+suppressWarnings(suppressPackageStartupMessages(require(ggplot2)))
+suppressWarnings(suppressPackageStartupMessages(require(R.matlab)))
+suppressWarnings(suppressPackageStartupMessages(require(reshape2)))
+suppressWarnings(suppressPackageStartupMessages(require(ggthemes)))
+suppressWarnings(suppressPackageStartupMessages(require(cowplot)))
+suppressWarnings(suppressPackageStartupMessages(require(grid)))
+suppressWarnings(suppressPackageStartupMessages(require(gridExtra)))
+suppressWarnings(suppressPackageStartupMessages(require(readR)))
+suppressWarnings(suppressPackageStartupMessages(require(reshape2)))
+suppressWarnings(suppressPackageStartupMessages(require(RColorBrewer)))
+suppressWarnings(suppressPackageStartupMessages(require(wesanderson)))
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/coinfection_heterogeneity")
+#setwd("C:/Users/beallma/Documents/MATLAB/coinfection_heterogeneity")
+#setwd("C:/Users/beallma/Documents/MATLAB/Chicago_data")
+```
+
+```{r, echo=FALSE}
+cbPalette <- c( "#D55E00","#F0E442", "#56B4E9", "#CC79A7",  "#999999","#0072B2","#009E73", "#E69F00")
+
+make.data.frame = function(N = 1000, C = NA, MOI = 10, ngenes = 8, nsegs = 1, pSIP = 0, epsilon = 0, t.end = 20, k = NA, linear = 0, heterogeneity = 0, reps = 1:20){
+  
+  if(is.na(C)){
+    if((N / MOI - .5) %% 2 == 0) {
+      C = format(round((N / MOI) + .1), scientific = FALSE)
+    }
+    else{
+      C = format(round(N / MOI), scientific = FALSE)
+    }
+  }
+  
+  
+  runs = data.frame(t = 1:t.end, r =as.vector(sapply(1:length(reps), rep, t.end)), num_mut = rep(NA, t.end*length(reps)), fitness = rep(NA, t.end*length(reps)))
+  
+  for(r in reps){
+    if(epsilon == 0 & linear == 1){
+      fname = paste("lin_", "outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else if(epsilon == 0 & heterogeneity == 0 & linear == 0){
+      fname = paste("log_NaN", "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else if(epsilon == 0 & heterogeneity == 1 & linear == 0){
+      fname = paste("gamma_",k, "_outfile_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")
+    }
+    else{fname = paste("epsilon_", epsilon*100, "_nsegs1_ngenes8_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")}
+    
+    #print(r) #for determining which file cannot be loaded
+    mydata = readMat(fname)
+    
+    for(t in 1:t.end){
+      mutations = mydata$num.mut.mat[,,t]
+      runs$num_mut[runs$t == t & runs$r == r] = mean(rowSums(mutations))
+      runs$fitness[runs$t == t & runs$r == r] = mean(mydata$virion.fitness.mat[,t])
+    }
+  }
+  param.list = mydata$params
+  struc.param = param.list[,,1]
+  
+  runs$MOI = struc.param$MOI[,]
+  runs$heterogeneity = heterogeneity
+  runs$linear = linear
+  runs$V = struc.param$N[,]
+  runs$C = struc.param$C[,]
+  runs$k = struc.param$k[,]
+  return(runs)
+}
+
+summarized.data.frame = function(N = 1000, C = NA, MOI = 10, ngenes = 8, nsegs = 1, pSIP = 0, epsilon = 0, t.end = 20, k = NA, linear = 0, heterogeneity = 0, reps = 20){
+  if(is.na(C)){
+    if((N / MOI - .5) %% 2 == 0) {
+      C = format(round((N / MOI) + .1), scientific = FALSE)
+    }
+    else{
+      C = format(round(N / MOI), scientific = FALSE)
+    }
+  }
+  
+  
+  runs = data.frame(t = 1:t.end, r =as.vector(sapply(1:reps, rep, t.end)), num_mut = rep(NA, t.end*reps), fitness = rep(NA, t.end*reps))
+  #for(r in 1:reps){
+  if(epsilon == 0 & linear == 1){
+    fname = paste("summary_lin_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else if(epsilon == 0 & heterogeneity == 0 & linear == 0){
+    fname = paste("summary_log_NaN_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else if(epsilon == 0 & heterogeneity == 1 & linear == 0){
+    fname = paste("summary_gamma_",k, "_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else{fname = paste("epsilon_", epsilon*100, "_nsegs1_ngenes8_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")}
+  #}
+  mydata = readMat(fname)
+  params = mydata$params[,,1]
+  
+  # runs = data.frame(t = 1:params$tstep[,],
+  #                   mean_mut = rep(NA, params$tstep[,]),
+  #                   std_error = rep(NA, params$tstep[,]))
+    runs = data.frame(t = 1:t.end,
+                    mean_mut = rep(NA, t.end),
+                    std_error = rep(NA, t.end))
+  runs$mean_mut = mydata$mean.per.t[1:t.end]
+  runs$std_error = mydata$std.error[1:t.end]
+  
+  runs$MOI = params$MOI[,]
+  runs$heterogeneity = heterogeneity
+  runs$linear = linear
+  runs$V = params$N[,]
+  runs$C = params$C[,]
+  runs$k = params$k[,]
+  return(runs)
+}
+
+summarized.NeV.data.frame = function(N = 1000, C = NA, MOI = 10, ngenes = 8, nsegs = 1, pSIP = 0, epsilon = 0, t.end = 20, k = NA, linear = 0, heterogeneity = 0, reps = 20){
+  if(is.na(C)){
+    if((N / MOI - .5) %% 2 == 0) {
+      C = format(round((N / MOI) + .1), scientific = FALSE)
+    }
+    else{
+      C = format(round(N / MOI), scientific = FALSE)
+    }
+  }
+  
+  
+  #runs = data.frame(t = 1:t.end, r =as.vector(sapply(1:reps, rep, t.end)), num_mut = rep(NA, t.end*reps), fitness = rep(NA, t.end*reps))
+  #for(r in 1:reps){
+  if(epsilon == 0 & linear == 1){
+    fname = paste("summary_lin_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else if(epsilon == 0 & heterogeneity == 0 & linear == 0){
+    fname = paste("summary_log_NaN_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else if(epsilon == 0 & heterogeneity == 1 & linear == 0){
+    fname = paste("summary_gamma_",k, "_nsegs", nsegs, "_ngenes",ngenes,"_N", N, "_C", C, "_pSIP", pSIP*100, ".mat", sep="")
+  }
+  else{fname = paste("epsilon_", epsilon*100, "_nsegs1_ngenes8_N", N, "_C", C, "_pSIP", pSIP*100, "_r", r, ".mat", sep="")}
+  #}
+  mydata = readMat(fname)
+  params = mydata$params[,,1]
+  
+  # runs = data.frame(t = 1:params$tstep[,],
+  #                   mean_mut = rep(NA, params$tstep[,]),
+  #                   std_error = rep(NA, params$tstep[,]))
+  runs = data.frame(V.eff.mean = NA, V.eff.mean = NA, V = NA, C = NA, k = NA, mean_mut_fin = NA, std_error_mean = NA)
+  
+  runs$mean_mut_fin = mydata$mean.per.t[t.end]
+  runs$std_error_mean = mydata$std.error[t.end]
+  
+  runs$V.eff.error = mydata$V.eff.error
+  runs$V.eff.mean = mydata$V.eff.mean
+  
+  runs$V = params$N[,]
+  runs$C = params$C[,]
+  runs$k = params$k[,]
+  return(runs)
+}
+
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column    
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+```
+
+
+```{r, echo=FALSE}
+#setwd("C:/Users/beallma/Documents/MATLAB/Chicago_data")
+#test.summ.data = summarized.data.frame(N = 1000, C = '10000', k = '1000000',MOI = 0.1, heterogeneity = 1)
+#PANEL A: TIME COURSE
+n = 1000; moi = .1; moi2 = 5.9948
+#k.titles = c(1, 19, 1000, 51795, '1000000')#
+k.titles = c(1, 32, 1000, 31623, '1000000')#c(1, 3, 7, 19, 52, 139, 373, 1000, 2683, 7197, 19307, 51795, 138950, 372759, '1000000')
+k.values = c(0.01, 0.3612, 10, 316.23, 10000)
+
+Fig2.A.data = data.frame()
+
+for (K in k.titles) {
+  print(K)
+  # read in the mean data for each time point and for each replicate
+  data.curr.k = summarized.data.frame(N = n, MOI = moi, k = K, heterogeneity = 1, t.end = 150)
+  Fig2.A.data = rbind.data.frame(Fig2.A.data, data.curr.k)
+  
+}
+
+#setwd("C:/Users/beallma/Documents/MATLAB/coinfection_heterogeneity")
+null.no.het = summarized.data.frame(N = n, MOI = moi, heterogeneity = 0, reps = 20, t.end = 150)
+null.no.het$k = Inf
+null.no.het = subset(null.no.het, t < 21)
+Fig2.A.data = subset(Fig2.A.data, t < 21)
+Fig2.A.data.combo = rbind.data.frame(Fig2.A.data, null.no.het)
+#max(Fig2.A.data$t))
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig2.A.data.ends.SE = summarySE(Fig2.A.data.combo, measurevar="num_mut", groupvars=c("t", "k"))
+#Fig2.A.data.ends.SE$k = unique(Fig2.A.data.combo$k)
+legend_labs = c(k.values, Inf)#c(log10(min(subset(Fig2.A.data.ends.SE$k, is.na(Fig2.A.data.ends.SE$k) == FALSE))),"","","","","","",
+              #  log10(median(unique(subset(Fig2.A.data.ends.SE$k, is.na(Fig2.A.data.ends.SE$k) == FALSE)))),
+              #  "","","","","","",log10(max(subset(Fig2.A.data.ends.SE$k, is.na(Fig2.A.data.ends.SE$k) == FALSE))))
+#legend_labs = log10(as.integer(k.titles))
+
+pd <- position_dodge(0)
+alph = 0.4
+
+Fig2.A.plot = ggplot(NULL, aes(x=t, y=mean_mut)) + 
+    geom_line(data = Fig2.A.data.combo, aes(x=t, y=mean_mut,  color = as.factor((k)), group = as.factor((k))), position=pd, alpha = alph) + 
+    geom_point(data = Fig2.A.data.combo, aes(x=t, y=mean_mut, color = as.factor((k)), group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+    geom_errorbar(data = Fig2.A.data.combo, aes(x=t, ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)), group = as.factor(k)), width=1, position = pd, alpha = alph) +
+  xlab("t") + ylab("mean mutations \nper virion") +  
+  #scale_fill_discrete(name = "",labels = "No \nheterogeneity")+
+  scale_color_manual(name = "k",values = c(cbPalette[1:length(k.values)], "black"),#c(brewer.pal(n = 5, name = "Dark2"), "black"), 
+                     labels = c(0.01, 0.3612, 10, 316.23, 10000, "No \nHeterogeneity"), 
+                     breaks = as.factor(unique((Fig2.A.data.combo$k)))) +
+  theme_bw() +
+  theme(legend.position = "right",
+        legend.title = element_text(colour="black", size=14, face="bold"), 
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"))
+
+Fig2.A.plot
+
+```
+
+```{r, echo=FALSE}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+#PANEL B: DRIFT
+colfunc <- colorRampPalette(c("aquamarine", "darkorange3"))
+mycols = colfunc(5)
+N.2.B= c(100, 167, 278, 464, 774, 1292, 2154, 3594, 5995, 10000) # the V values we tested
+k.values = c(0.01, 0.1, 1, 10)
+k.titles = c("1", "10", "100", "1000")
+C = c('1000', '1670', '2780', '4640', '7740', '12920', '21540', '35940', '59950', '100000')
+moi = 0.1
+
+Fig2.B.data = data.frame()
+null.no.het = data.frame()
+
+for (n in N.2.B) {
+  setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+  null.no.het = rbind.data.frame(null.no.het, summarized.data.frame(N = n, MOI = moi, heterogeneity = 0, reps = 20, t.end = 20))
+  
+  setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max211007")
+  for (K in k.titles) {
+    # read in the mean data for each time point and for each replicate
+    data.curr.k = summarized.data.frame(N = n, MOI = moi, k = K, heterogeneity = 1, t.end = 20, reps=20)
+    Fig2.B.data = rbind.data.frame(Fig2.B.data, data.curr.k)
+  }
+}
+
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+#null.no.het = summarized.data.frame(N = n, MOI = moi, heterogeneity = 0, reps = 20, t.end = 20)
+null.no.het$k = Inf
+null.no.het = subset(null.no.het, t == 20)
+Fig2.B.data = subset(Fig2.B.data, t == 20)
+Fig2.B.data.ends = rbind.data.frame(Fig2.B.data, null.no.het)
+legend_labs = c(k.values, expression(infinity))
+# extract only the final time points from the data
+Fig2.B.data.ends$MOI = Fig2.B.data.ends$V / Fig2.B.data.ends$C
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig2.B.data.ends.SE = summarySE(Fig2.B.data.ends, measurevar="num_mut", groupvars=c("k", "V"))
+
+
+pd <- position_dodge(0)
+alph = 0.7
+# ggplot(Fig2.B.data.ends, aes(x=log10(V), y=(mean_mut), fill=k, color = log10(k), group = k))+
+#     geom_errorbar(aes(ymin=(mean_mut-std_error), ymax=(mean_mut+std_error)), width=1, position=pd, alpha = 0.5) +
+#     geom_line(position=pd) + 
+#     geom_point(position=pd, size=3, show.legend = FALSE)+
+
+Fig2.B.plot = ggplot(NULL, aes(x=log10(V), y=mean_mut)) + 
+  geom_line(data = Fig2.B.data.ends, aes(x=log10(V), y=mean_mut,  color = as.factor((k)), 
+                                         group = as.factor((k))), position=pd, alpha = alph) + 
+  geom_point(data = Fig2.B.data.ends, aes(x=log10(V), y=mean_mut, color = as.factor((k)), 
+                                          group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(data = Fig2.B.data.ends, aes(x=log10(V), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)), 
+                                             group = as.factor(k)), width=0.5, position = pd, alpha = alph)+
+  #scale_color_gradient(low = "pink", high = "navy")#+
+  #all of this stuff is what allowed me to create the gradient block on the right
+  #scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.B.data.ends.SE$k))) +
+  scale_color_manual(name ="k", values =mycols,#c(cbPalette[1:length(unique((Fig2.B.data.ends$k)))]),  #bquote(bold(~k^-1)),values = c(cbPalette[1:length(k.values)]),#c(brewer.pal(n = 5, name = "Dark2"), "black"), 
+                     labels = legend_labs, 
+                     breaks = as.factor(unique((Fig2.B.data.ends$k)))) +
+  scale_x_continuous(name="V", breaks=c(2, 3, 4), labels = c("100", "1000", "10000")) + 
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(4.75,21.5), breaks = c(5, 10, 15, 20)) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "left",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.title.align = .75,
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size = 10.8))
+
+
+Fig2.B.plot
+```
+
+```{r, echo=FALSE}
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+#PANEL C: PHENOTYPIC HIDING
+MOI.2.C= c(0.0100, 0.03593761, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+k.titles = c(1, 32, 1000, 31623, '1000000')#c(1, 32, 1000, 31623, '1000000')#c(1, 3, 7, 19, 52, 139, 373, 1000, 2683, 7197, 19307, 51795, 138950, 372759, '1000000')
+colfunc <- colorRampPalette(c("aquamarine", "darkorange3"))
+mycols = colfunc(5)
+k.values = c(0.01, 0.1, 1, 10)
+k.titles = c("1", "10", "100", "1000")
+n = 1000
+C = c('100000', '27826', '7743', '2154', '599', '167', '46', '13', '4', '1')
+
+Fig2.C.data = data.frame()
+null.no.het = data.frame()
+#setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/base")
+for (cell in C) {
+    setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/base211007")
+    null.no.het = rbind.data.frame(null.no.het, summarized.data.frame(N = n, C = cell, heterogeneity = 0, reps = 20, t.end = 20))
+    setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+    for (K in k.titles) {
+    #print(K)
+    # read in the mean data for each time point and for each replicate
+      #data.curr.k = make.data.frame(N = n, C = cell, k = K, heterogeneity = 1, t.end = 20, reps = 20)
+    data.curr.k = summarized.data.frame(N = n, C = cell, k = K, heterogeneity = 1, t.end = 20, reps = 20)
+    Fig2.C.data = rbind.data.frame(Fig2.C.data, data.curr.k)
+  }
+}
+
+null.no.het$k = Inf
+null.no.het = subset(null.no.het, t == 20)
+Fig2.C.data = subset(Fig2.C.data, t == 20)
+# extract only the final time points from the data
+Fig2.C.data.ends = rbind.data.frame(Fig2.C.data, null.no.het)
+Fig2.C.data.ends$MOI = Fig2.C.data.ends$V / Fig2.C.data.ends$C
+
+#calculate the mean, sd, and 95% CI for each of the MOIs across replicates
+#Fig2.C.data.ends.SE = summarySE(Fig2.C.data.ends, measurevar="num_mut", groupvars=c("k", "MOI"))
+
+legend_labs = c(k.values, expression(infinity))
+
+pd <- position_dodge(0.1)
+alph = 0.7
+Fig2.C.plot = ggplot(Fig2.C.data.ends, aes(x=(MOI), y=mean_mut)) +
+  geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((k)),
+                                         group = as.factor((k))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((k)),
+                                          group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)),
+                                             group = as.factor(k)), width=1, position = pd, alpha = alph)+
+  #scale_color_gradient(low = "pink", high = "navy")#+
+  #all of this stuff is what allowed me to create the gradient block on the right
+  #scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.B.data.ends.SE$k))) +
+  scale_color_manual(name = "k",values = mycols,#c(cbPalette[1:length(as.factor(unique(Fig2.C.data.ends$k)))]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+                     labels = legend_labs,#as.factor(c(0.001, 0.01, 0.1, 1, 10)),
+                     breaks = unique(Fig2.C.data.ends$k))+#as.factor(unique((Fig2.B.data.ends$k)))) +
+  scale_x_log10(name = "MOI (V = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = c("0.01", "0.1", "1", "10","100", "1000")) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(4.75,21.5), breaks = c(5, 10, 15, 20)) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+# Fig2.C.plot = ggplot(Fig2.C.data.ends.SE, aes(x=log10(MOI), y=num_mut, fill=k, color = log10(k), group = k))+
+#     geom_errorbar(aes(ymin=num_mut-ci, ymax=num_mut+ci), width=1, position=pd, alpha  = 0.5) +
+#     geom_line(position=pd) +
+#     geom_point(position=pd, size=3, show.legend = FALSE)+
+#     #scale_color_gradient(low = "pink", high = "navy")#+
+#   #all of this stuff is what allowed me to create the gradient block on the right
+#   scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.C.data.ends.SE$k))) +
+#   xlab("log MOI") +
+#   scale_y_continuous(name = "", limits = c(4.75,21.5), breaks = c(5, 10, 15, 20)) +
+#   theme_bw() +
+#   theme(legend.position = "none",
+#         legend.title = element_text(colour="black", size=14, face="bold"),
+#         legend.text = element_text(colour="black", size=12),
+#         axis.text=element_text(size=12),
+#         axis.title=element_text(size=12,face="bold"))
+
+Fig2.C.plot
+```
+
+```{r, echo=FALSE}
+#setwd("C:/Users/beallma/Documents/MATLAB/Chicago_data")
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+colfunc <- colorRampPalette(c("aquamarine", "darkorange3"))
+mycols = colfunc(5)
+MOI.2.D= c(0.0100, 0.0359, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+k.values = c(0.01, 0.1, 1, 10)
+k.titles = c("1", "10", "100", "1000")
+#k.titles = c(1, 32, 1000, 31623, '1000000')#c(1, 32, 1000, 31623, '1000000')#c(1, 3, 7, 19, 52, 139, 373, 1000, 2683, 7197, 19307, 51795, 138950, 372759, '1000000')
+#k.values = c(0.001, 0.01, 0.1, 1, 10)
+c = 1000
+n = c(10, 36, 129, 464, 1668, 5995, '21544', '77426', '278256', '1000000')
+
+Fig2.D.data = data.frame()
+null.no.het = data.frame()
+
+for (N in n) {
+  print(N)
+  setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max211007")
+  null.no.het = rbind.data.frame(null.no.het, summarized.data.frame(N = N, C = c, heterogeneity = 0, reps = 20, t.end = 20))
+  setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/max")
+  for (K in k.titles) {
+    print(K)
+    
+    # read in the mean data for each time point and for each replicate
+    # if((c * moi - .5) %% 2 == 0) {
+    #   n = format(round(( c * moi) + .1), scientific = FALSE)
+    # }
+    # else{
+    #   n = format(round(c * moi), scientific = FALSE)
+    # }
+    data.curr.k = summarized.data.frame(N = N, C = c, k = K, heterogeneity = 1, t.end = 21)
+    Fig2.D.data = rbind.data.frame(Fig2.D.data, data.curr.k)
+  }
+}
+
+
+null.no.het$k = Inf
+null.no.het = subset(null.no.het, t == 20)
+Fig2.D.data = subset(Fig2.D.data, t == 20)
+# extract only the final time points from the data
+Fig2.D.data.ends = rbind.data.frame(Fig2.D.data, null.no.het)
+Fig2.D.data.ends$MOI = Fig2.D.data.ends$V / Fig2.D.data.ends$C
+# legend_labs = c(log10(min(Fig2.D.data.ends$k)),"","","","","","",
+#                 log10(median(unique(Fig2.D.data.ends$k))),
+#                 "","","","","","",log10(max(Fig2.D.data.ends.SE$k)))
+pd <- position_dodge(width = 0)
+alph = .7
+
+Fig2.D.data.ends$theoVe = Fig2.D.data.ends$V / (1 + (1/Fig2.D.data.ends$k))
+
+Fig2.D.plot = ggplot(Fig2.D.data.ends, aes(x=(MOI), y=mean_mut)) +
+  geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((k)),
+                                         group = as.factor((k))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((k)),
+                                          group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)),
+                                             group = as.factor(k)), width=1, position = pd, alpha = alph)+
+  #scale_color_gradient(low = "pink", high = "navy")#+
+  #all of this stuff is what allowed me to create the gradient block on the right
+  #scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.B.data.ends.SE$k))) +
+  scale_color_manual(name = "k",values = mycols,#c(cbPalette[1:length(as.factor(unique(Fig2.D.data.ends$k)))]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+                     labels = legend_labs,#as.factor(c(0.001, 0.01, 0.1, 1, 10)),
+                     breaks = unique(Fig2.C.data.ends$k))+#as.factor(unique((Fig2.B.data.ends$k)))) +
+  scale_x_log10(name = "MOI (C = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = c("0.01", "0.1", "1", "10","100", "1000")) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(4.75,21.5), breaks = c(5, 10, 15, 20)) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "left",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+Fig2.NeV.theo = ggplot(Fig2.D.data.ends, aes(x=(theoVe), y=mean_mut)) +
+  geom_line(aes(x=(theoVe), y=mean_mut,  color = as.factor((k)),
+                                         group = as.factor((k))), position=pd, alpha = alph) +
+  geom_point(aes(x=(theoVe), y=mean_mut, color = as.factor((k)),
+                                          group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(theoVe), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)),
+                                             group = as.factor(k)), width=.1, position = pd, alpha = alph)+
+  #scale_color_gradient(low = "pink", high = "navy")#+
+  #all of this stuff is what allowed me to create the gradient block on the right
+  #scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.B.data.ends.SE$k))) +
+  scale_color_manual(name = "k",values = mycols,#c(cbPalette[1:length(as.factor(unique(Fig2.D.data.ends$k)))]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+                     labels = legend_labs,#as.factor(c(0.001, 0.01, 0.1, 1, 10)),
+                     breaks = unique(Fig2.C.data.ends$k))+#as.factor(unique((Fig2.B.data.ends$k)))) +
+   scale_x_log10(name = "effective population size", breaks = c(0.1, 1, 10, 100, 1000, 10000, 100000, 1000000), labels = c("0.01", "0.1","1", "10", "100", "1000", "10000", "100000")) +
+  scale_y_continuous(name = "", limits = c(4.75,21.5), 
+                breaks = c(5, 10, 15, 20), labels = c("5", "10", "15", "20")) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=10))
+
+Fig2.D.plot
+Fig2.NeV.theo
+
+```
+
+
+```{r, echo=FALSE}
+F2.paper = plot_grid(Fig2.D.plot, Fig2.NeV.theo, ncol = 2, labels = c('A','B'), 
+                        label_size = 14, rel_widths = c(1.35,1,1), label_x = c(0, 0), label_y = c(1.0, 1.0))
+#F2.supplement = plot_grid(Fig2.B.plot, Fig2.C.plot, ncol = 2, labels = c('A','B'), 
+#                        label_size = 14, rel_widths = c(1.2,1,1), label_x = c(0, 0), label_y = c(1.0, 1.0))
+# bottom_row.paper = plot_grid(Fig1.B.plot, Fig1.C.plot, Fig1.D.plot, nrow = 1, labels = c('B', 'C', 'D'), 
+#                              label_size = 16, label_x = c(.2, 0, 0)) # label_x makes sure the label doesnt run intot he axis label
+# top_row.paper =  plot_grid(Fig1.A.plot, nrow = 1, labels = c('A'), label_size = 16)
+F2.paper
+#F2.supplement
+ggsave(plot = F2.paper, file = paste0("Figure_Rec_Stochastic_", Sys.Date(), ".jpg"), height = 3.5, width = 6, units = "in")
+ggsave(plot = F2.paper, file = paste0("Figure_Rec_Stochastic_", Sys.Date(), "pdf"), height = 3.5, width = 6, units = "in")
+#ggsave(plot = F2.supplement, file = paste0("Figure 2 Supplement", Sys.Date(), ".jpg"), height = 4.4, width = 6, units = "in")
+
+```
+
+
+
+```{r, echo=FALSE}
+#setwd("C:/Users/beallma/Documents/MATLAB/Chicago_data")
+setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min")
+colfunc <- colorRampPalette(c("aquamarine", "darkorange3"))
+mycols = colfunc(5)
+MOI.2.D= c(0.0100, 0.0359, 0.1292, 0.4642, 1.6681, 5.9958, 21.5443, 77.4264, 278.2559, 1000) # the MOI values we tested
+k.values = c(0.01, 0.1, 1, 10)
+k.titles = c("1", "10", "100", "1000")
+#k.titles = c(1, 32, 1000, 31623, '1000000')#c(1, 32, 1000, 31623, '1000000')#c(1, 3, 7, 19, 52, 139, 373, 1000, 2683, 7197, 19307, 51795, 138950, 372759, '1000000')
+#k.values = c(0.001, 0.01, 0.1, 1, 10)
+c = 1000
+n = c(10, 36, 129, 464, 1668, 5995, '21544', '77426', '278256', '1000000')
+
+Fig2.D.data = data.frame()
+null.no.het = data.frame()
+
+for (N in n) {
+  print(N)
+  setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min211007")
+  null.no.het = rbind.data.frame(null.no.het, summarized.data.frame(N = N, C = c, heterogeneity = 0, reps = 20, t.end = 20))
+  setwd("C:/Users/beallma/OneDrive - Emory University/Documents/MATLAB/GitHubCode/min")
+  for (K in k.titles) {
+    print(K)
+    
+    # read in the mean data for each time point and for each replicate
+    # if((c * moi - .5) %% 2 == 0) {
+    #   n = format(round(( c * moi) + .1), scientific = FALSE)
+    # }
+    # else{
+    #   n = format(round(c * moi), scientific = FALSE)
+    # }
+    data.curr.k = summarized.data.frame(N = N, C = c, k = K, heterogeneity = 1, t.end = 20)
+    Fig2.D.data = rbind.data.frame(Fig2.D.data, data.curr.k)
+  }
+}
+
+
+null.no.het$k = Inf
+null.no.het = subset(null.no.het, t == 20)
+Fig2.D.data = subset(Fig2.D.data, t == 20)
+# extract only the final time points from the data
+Fig2.D.data.ends = rbind.data.frame(Fig2.D.data, null.no.het)
+Fig2.D.data.ends$MOI = Fig2.D.data.ends$V / Fig2.D.data.ends$C
+# legend_labs = c(log10(min(Fig2.D.data.ends$k)),"","","","","","",
+#                 log10(median(unique(Fig2.D.data.ends$k))),
+#                 "","","","","","",log10(max(Fig2.D.data.ends.SE$k)))
+pd <- position_dodge(width = 0)
+alph = .7
+
+Fig2.D.data.ends$theoVe = Fig2.D.data.ends$V / (1 + (1/Fig2.D.data.ends$k))
+
+Fig2.D.plot = ggplot(Fig2.D.data.ends, aes(x=(MOI), y=mean_mut)) +
+  geom_line(aes(x=(MOI), y=mean_mut,  color = as.factor((k)),
+                                         group = as.factor((k))), position=pd, alpha = alph) +
+  geom_point(aes(x=(MOI), y=mean_mut, color = as.factor((k)),
+                                          group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(MOI), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)),
+                                             group = as.factor(k)), width=1, position = pd, alpha = alph)+
+  #scale_color_gradient(low = "pink", high = "navy")#+
+  #all of this stuff is what allowed me to create the gradient block on the right
+  #scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.B.data.ends.SE$k))) +
+  scale_color_manual(name = "k",values = mycols,#c(cbPalette[1:length(as.factor(unique(Fig2.D.data.ends$k)))]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+                     labels = legend_labs,#as.factor(c(0.001, 0.01, 0.1, 1, 10)),
+                     breaks = unique(Fig2.C.data.ends$k))+#as.factor(unique((Fig2.B.data.ends$k)))) +
+  scale_x_log10(name = "MOI (C = 1000)", breaks = c(0.01, 0.1, 1, 10, 100, 1000), labels = c("0.01", "0.1", "1", "10","100", "1000")) +
+  scale_y_continuous(name = "mean mutations \nper virion at t = 20", limits = c(4.75,21.5), breaks = c(5, 10, 15, 20)) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "left",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+Fig2.NeV.theo = ggplot(Fig2.D.data.ends, aes(x=(theoVe), y=mean_mut)) +
+  geom_line(aes(x=(theoVe), y=mean_mut,  color = as.factor((k)),
+                                         group = as.factor((k))), position=pd, alpha = alph) +
+  geom_point(aes(x=(theoVe), y=mean_mut, color = as.factor((k)),
+                                          group = as.factor((k))), position=pd, size=3, alpha = alph, show.legend = TRUE)+
+  geom_errorbar(aes(x=(theoVe), ymin=mean_mut-std_error, ymax=mean_mut+std_error, color = as.factor((k)),
+                                             group = as.factor(k)), width=.1, position = pd, alpha = alph)+
+  #scale_color_gradient(low = "pink", high = "navy")#+
+  #all of this stuff is what allowed me to create the gradient block on the right
+  #scale_color_gradientn(name = "log k",colours = terrain.colors(15), labels = legend_labs, breaks = unique(log10(Fig2.B.data.ends.SE$k))) +
+  scale_color_manual(name = "k",values = mycols,#c(cbPalette[1:length(as.factor(unique(Fig2.D.data.ends$k)))]),#c(brewer.pal(n = 5, name = "Dark2"), "black"),
+                     labels = legend_labs,#as.factor(c(0.001, 0.01, 0.1, 1, 10)),
+                     breaks = unique(Fig2.C.data.ends$k))+#as.factor(unique((Fig2.B.data.ends$k)))) +
+   scale_x_log10(name = "effective population size", breaks = c(0.1, 1, 10, 100, 1000, 10000, 100000, 1000000), labels = c("0.01", "0.1","1", "10", "100", "1000", "10000", "100000")) +
+  scale_y_continuous(name = "", limits = c(4.75,21.5), 
+                breaks = c(5, 10, 15, 20), labels = c("5", "10", "15", "20")) +
+  geom_hline(aes(yintercept = 20), color = "red", linetype = "dashed") +
+  geom_hline(aes(yintercept = 5), color = "blue", linetype = "dotted") +
+  theme_bw() +
+  theme(legend.position = "none",
+        legend.title = element_text(colour="black", size=14, face="bold"),
+        legend.text = element_text(colour="black", size=12),
+        axis.text=element_text(size=12),
+        axis.title=element_text(size=12,face="bold"),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1, size=10))
+
+Fig2.D.plot
+Fig2.NeV.theo
+
+```
+
+
+```{r, echo=FALSE}
+F2.paper = plot_grid(Fig2.D.plot, Fig2.NeV.theo, ncol = 2, labels = c('A','B'), 
+                        label_size = 14, rel_widths = c(1.35,1,1), label_x = c(0, 0), label_y = c(1.0, 1.0))
+#F2.supplement = plot_grid(Fig2.B.plot, Fig2.C.plot, ncol = 2, labels = c('A','B'), 
+#                        label_size = 14, rel_widths = c(1.2,1,1), label_x = c(0, 0), label_y = c(1.0, 1.0))
+# bottom_row.paper = plot_grid(Fig1.B.plot, Fig1.C.plot, Fig1.D.plot, nrow = 1, labels = c('B', 'C', 'D'), 
+#                              label_size = 16, label_x = c(.2, 0, 0)) # label_x makes sure the label doesnt run intot he axis label
+# top_row.paper =  plot_grid(Fig1.A.plot, nrow = 1, labels = c('A'), label_size = 16)
+F2.paper
+#F2.supplement
+ggsave(plot = F2.paper, file = paste0("Figure_Dom_Stochastic_", Sys.Date(), ".jpg"), height = 3.5, width = 6, units = "in")
+ggsave(plot = F2.paper, file = paste0("Figure_Dom_Stochastic_", Sys.Date(), ".pdf"), height = 3.5, width = 6, units = "in")
+#ggsave(plot = F2.supplement, file = paste0("Figure 2 Supplement", Sys.Date(), ".jpg"), height = 4.4, width = 6, units = "in")
+
+```

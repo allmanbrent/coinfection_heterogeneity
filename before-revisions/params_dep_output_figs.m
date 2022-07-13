@@ -42,9 +42,6 @@ function void = params_dep_output_figs()
     for n = F3params.N
         params = F3params;
         params.N = n;
-        if n > 77426
-            params.ran = 1;
-        end
         main_coinfection_script(params)
         summarize_data_NeV(params);
     end
